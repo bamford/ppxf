@@ -20,7 +20,7 @@
 
 from __future__ import print_function
 
-import pyfits
+from astropy.io import fits as pyfits
 from scipy import signal
 import numpy as np
 from time import clock
@@ -31,6 +31,8 @@ import ppxf_util as util
 
 def ppxf_two_components_example():
 
+    bulge_fraction = 0.8
+    
     velscale = 30.
 
     hdu = pyfits.open('spectra/Rbi1.30z+0.00t12.59.fits')  # Solar metallicitly, Age=12.59 Gyr
@@ -65,9 +67,10 @@ def ppxf_two_components_example():
         losvd /= np.sum(losvd) # normaize LOSVD
         galaxy[:, j] = signal.fftconvolve(model[:, j], losvd, mode="same")
         galaxy[:, j] /= np.median(model[:, j])
-    galaxy = np.sum(galaxy, axis=1)
-    sn = 200.
-    np.random.seed(2) # Ensure reproducible results
+    #galaxy = np.sum(galaxy, axis=1)
+    galaxy = bulge_fraction*galaxy[:, 0] + (1-bulge_fraction)*galaxy[:, 1]
+    sn = 100.
+    #np.random.seed(2) # Ensure reproducible results
     galaxy = np.random.normal(galaxy, galaxy/sn) # add noise to galaxy
 
     # Adopts two templates per kinematic component
@@ -78,34 +81,50 @@ def ppxf_two_components_example():
     # With multiple stellar kinematic components
     # a good starting guess is essential
     #
-    start = [np.mean(vel)*velscale, np.mean(sigma)*velscale]
-    start = [start, start]
+    #start = [np.mean(vel)*velscale, np.mean(sigma)*velscale]
+    #start = [start, start]
+    start = [np.array([10., 100.]), np.array([100., 10.])]
     goodPixels = np.arange(20, 1280)
 
+    plt.figure(figsize=(10,10))
+    plt.subplot(311)
+    title = "Two components pPXF fit - known bulge fraction"
+    plt.title(title)
+    print("==============================================")
+    print(title)
     t = clock()
+    pp = ppxf(templates, galaxy, galaxy*0+1, velscale, start,
+              goodpixels=goodPixels, plot=True, degree=4,
+              moments=[4, 4], component=[0, 0, 1, 1],
+              bulge_fraction=bulge_fraction)
 
-    plt.clf()
-    plt.subplot(211)
-    plt.title("Two components pPXF fit")
-    print("+++++++++++++++++++++++++++++++++++++++++++++")
-
+    print("Total elapsed time %.2f s" % (clock() - t))
+    plt.subplot(312)
+    title = "Two components pPXF fit - free bulge fraction"
+    plt.title(title)
+    print("----------------------------------------------")
+    print(title)
+    t = clock()
     pp = ppxf(templates, galaxy, galaxy*0+1, velscale, start,
               goodpixels=goodPixels, plot=True, degree=4,
               moments=[4, 4], component=[0, 0, 1, 1])
 
-    plt.subplot(212)
-    plt.title("Single component pPXF fit")
-    print("---------------------------------------------")
-
+    print("Total elapsed time %.2f s" % (clock() - t))
+    plt.subplot(313)
+    title = "Single component pPXF fit"
+    plt.title(title)
+    print("----------------------------------------------")
+    print(title)
     start = start[0]
+    t = clock()
     pp = ppxf(templates, galaxy, galaxy*0+1, velscale, start,
               goodpixels=goodPixels, plot=True, degree=4, moments=4)
 
+    print("Total elapsed time %.2f s" % (clock() - t))
+    print("==============================================")
     plt.tight_layout()
     plt.pause(0.01)
-
-    print("=============================================")
-    print("Total elapsed time %.2f s" % (clock() - t))
+    plt.show()
 
 #------------------------------------------------------------------------------
 

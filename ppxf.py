@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 ################################################################################
 #
 # Copyright (C) 2001-2015, Michele Cappellari
@@ -493,6 +494,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from numpy.polynomial import legendre
 from scipy import ndimage, optimize, linalg
+from scipy.optimize import minimize
  
 import cap_mpfit as mpfit
 
@@ -509,11 +511,63 @@ def nnls_flags(A, b, flag):
     m, n = A.shape
     AA = np.hstack([A, -A[:, flag]])
     x, err = optimize.nnls(AA, b)
-    x[flag] -= x[n:]
-
+    x[flag] -= x[n:] #same as x[flag]=x[flag]-x[n:]
     return x[:n]
 
 #-------------------------------------------------------------------------------
+def nnls_flags_bd(A, b, pflag, bflag, dflag, bulge_fraction=None):
+    
+    def fun(w, verbose=False):
+        model = np.dot(A, w)
+        residuals = model - b
+        chisq = (residuals**2).sum()
+        gradient = (A.T * 2 * residuals).sum(1)
+        if verbose:
+            print(' weights: ', w)
+            print('   model: ', model)
+            print('       b: ', b)
+            print('residual: ', residuals)
+        return chisq, gradient
+
+    nA = A.shape[1]
+    nB = bflag.sum()
+    nD = dflag.sum()
+    bdflag = ~pflag
+
+    cons = [{'type': 'ineq',
+             'fun' : lambda w: w[bdflag],
+             'jac' : lambda w: np.identity(nA)[bdflag]},
+             {'type': 'ineq',
+             'fun' : lambda w: w[bdflag].sum() - 1e-12,  # small number prevents div by zero and NaNs
+             'jac' : lambda w: np.where(bdflag, 1.0, 0.0)}]
+
+    if bulge_fraction is not None:
+        def bd_cons(w):
+            return np.array([w[bflag].sum() / w[bdflag].sum() - bulge_fraction])
+        def bd_cons_jac(w):
+            jac = np.zeros(w.shape)
+            jac[bdflag] = -w[bflag].sum() / (w[bdflag].sum()**2) 
+            jac[bflag] += 1.0/w[bdflag].sum()
+            return jac
+        cons.extend([{'type': 'eq', 'fun' : bd_cons, 'jac' : bd_cons_jac}])
+
+    w0 = np.zeros(nA)
+    w0[bflag] = 1.0/nB
+    if bulge_fraction is not None:
+        w0[dflag] = (1.0/bulge_fraction - 1.0) / nD
+    elif nD > 0:
+        w0[dflag] = 1.0/nD
+    
+    res = minimize(fun, w0, constraints=cons, jac=True, method='SLSQP')
+    if res.status > 0:
+        print('Warning: problem finding optimal template weights')
+        print('         kinematics may be bad!')
+        #print(res)
+        #fun(res.x, verbose=True)
+        
+    return res.x
+#-------------------------------------------------------------------------------
+
 
 def rebin(x, factor):
     """
@@ -573,7 +627,7 @@ def reddening_curve(lam, ebv):
 
 #-------------------------------------------------------------------------------
 
-def _bvls_solve(A, b, npoly):
+def _bvls_solve(A, b, npoly, nB, bulge_fraction=None):
 
     # No need to enforce positivity constraints if fitting one single template:
     # use faster linear least-squares solution instead of NNLS.
@@ -585,9 +639,13 @@ def _bvls_solve(A, b, npoly):
         soluz = linalg.lstsq(A, b)[0]
     else:               # Fitting multiple templates
         flag = np.zeros(n, dtype=bool)
+        bflag = np.zeros(n, dtype=bool)
+        dflag = np.zeros(n, dtype=bool)
         flag[:npoly] = True  # flag = True on Legendre polynomials
-        soluz = nnls_flags(A, b, flag)
-
+        bflag[npoly:npoly+nB] = True
+        dflag[npoly+nB:] = True
+        #soluz = nnls_flags(A, b, flag)
+        soluz = nnls_flags_bd(A, b, flag, bflag, dflag, bulge_fraction)
     return soluz
 
 #-------------------------------------------------------------------------------
@@ -628,7 +686,8 @@ class ppxf(object):
     def __init__(self, templates, galaxy, noise, velScale, start,
             bias=None, clean=False, degree=4, goodpixels=None, mdegree=0,
             moments=2, oversample=False, plot=False, quiet=False, sky=None,
-            vsyst=0, regul=0, lam=None, reddening=None, component=0, reg_dim=None):
+            vsyst=0, regul=0, lam=None, reddening=None, component=0, reg_dim=None,
+            bulge_fraction=None):
 
         # Do extensive checking of possible input errors
         #
@@ -645,6 +704,8 @@ class ppxf(object):
         self.lam = lam
         self.reddening = reddening
         self.reg_dim = np.asarray(reg_dim)
+        self.bulge_fraction = bulge_fraction
+        self.weights = None
 
         s1 = templates.shape
         if len(s1) == 1: # Single template
@@ -690,7 +751,6 @@ class ppxf(object):
 
         if regul is None:
             self.regul = 0
-
         s2 = galaxy.shape
         s3 = noise.shape
 
@@ -780,6 +840,7 @@ class ppxf(object):
 
         p = 0
         vlims = np.empty(2*self.ncomp)
+
         for j in range(self.ncomp):
             start1 = start[j, :2]/velScale # Convert velocity scale to pixels
             parinfo[0+p]['value'] = start1[0]
@@ -863,10 +924,10 @@ class ppxf(object):
             nw = self.weights.size
             if reddening is not None:
                 print('Reddening E(B-V): ', self.reddening)
-            print('Nonzero Templates: ', np.sum(self.weights > 0), ' / ', nw)
+            print('Nonzero Templates: ', np.sum(self.weights/self.weights.sum() > 1e-12), ' / ', nw)
             if self.weights.size <= 20:
                 print('Templates weights:')
-                print("".join("%8.3g" % f for f in self.weights))
+                print("".join("%8.3g " % f for f in self.weights))
 
         if self.ncomp ==1:
             self.sol = self.sol[0]
@@ -906,7 +967,6 @@ class ppxf(object):
         #         ...                             # For all kinematic components
         #         vel_n, sigma_n, h3_n, h4_n, ...
         #         m1, m2, ...]                    # Multiplicative polynomials
-
         nspec = self.galaxy.ndim
         npix = self.galaxy.shape[0]
         ngh = pars.size - self.mdegree*nspec  # Parameters of the LOSVD only
@@ -1078,7 +1138,6 @@ class ppxf(object):
         # Select the spectral region to fit and solve the overconditioned system
         # using SVD/BVLS. Use unweighted array for estimating bestfit predictions.
         # Iterate to exclude pixels deviating more than 3*sigma if /CLEAN keyword is set.
-
         m = 1
         while m != 0:
             if self.regul > 0:
@@ -1087,7 +1146,8 @@ class ppxf(object):
             else:
                 aa = a[self.goodpixels, :]
                 bb = b[self.goodpixels]
-            self.weights = _bvls_solve(aa, bb, npoly)
+            nbulge = (self.component == 0).sum()  # component 0 is the bulge
+            self.weights = _bvls_solve(aa, bb, npoly, nbulge, self.bulge_fraction)
             self.bestfit = c.dot(self.weights)
             if len(s3) > 1 and s3[0] == s3[1]: # input NOISE is a npix*npix covariance matrix
                 err = self.noise.dot(self.galaxy - self.bestfit)[self.goodpixels]
@@ -1115,7 +1175,11 @@ class ppxf(object):
                 if self.moments[j] > 2:  
                     D2 += np.sum(pars[2+p:self.moments[j]+p]**2)  # eq.(8)
             err += self.bias*robust_sigma(err, zero=True)*np.sqrt(D2)  # eq.(9)
-
+        #nz=np.where(self.weights > 0)
+        #np.savetxt('pybestfit.dat',self.bestfit)
+        #print('weights',self.weights[nz])
+        #print('bulge',self.weights[npoly:npoly+nB],(self.weights[npoly:npoly+nB]).sum())
+        #print('disk',self.weights[npoly+nB:],self.weights[npoly+nB:].sum())
         return 0, err
 
 #-------------------------------------------------------------------------------
