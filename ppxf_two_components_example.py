@@ -87,10 +87,18 @@ def ppxf_two_components_example():
     goodPixels = np.arange(20, 1280)
 
     plt.figure(figsize=(10,10))
+    print("==============================================")
+    print("Input model")
+    print("Best Fit:       V     sigma        h3        h4        h5        h6")
+    for j in range(len(vel)):
+        print("comp.", j, ("%10.3g"*6) % (vel[j]*velscale, sigma[j]*velscale, 0, 0, 0, 0))
+    print('Templates weights:')
+    print(("%8.3g "*4) % (bulge_fraction, 0, 0, 1-bulge_fraction))
+
     plt.subplot(311)
     title = "Two components pPXF fit - known bulge fraction"
     plt.title(title)
-    print("==============================================")
+    print("----------------------------------------------")                
     print(title)
     t = clock()
     pp = ppxf(templates, galaxy, galaxy*0+1, velscale, start,

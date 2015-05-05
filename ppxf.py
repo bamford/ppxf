@@ -560,7 +560,7 @@ def nnls_flags_bd(A, b, pflag, bflag, dflag, bulge_fraction=None):
     
     res = minimize(fun, w0, constraints=cons, jac=True, method='SLSQP')
     if res.status > 0:
-        print('Warning: problem finding optimal template weights')
+        print('Warning: problem finding optimal template weights,')
         print('         kinematics may be bad!')
         #print(res)
         #fun(res.x, verbose=True)
