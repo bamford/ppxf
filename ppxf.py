@@ -481,7 +481,7 @@
 #           may be useful. MC, Las Vegas Airport, 13 September 2014
 #   V5.1.10: Fixed bug in saving output introduced in previous version.
 #           MC, Oxford, 14 October 2014
-#   V5.1.11 -- Reverted change introduced in V5.1.2. Thanks to Nora Lu"tzgendorf 
+#   V5.1.11 -- Reverted change introduced in V5.1.2. Thanks to Nora Lu"tzgendorf
 #           for reporting problems with oversample. MC, Sydney, 5 February 2015
 #   V5.1.12 -- Use color= instead of c= to avoid new Matplotlib 1.4 bug.
 #           MC, Oxford, 25 February 2015
@@ -495,7 +495,7 @@ import matplotlib.pyplot as plt
 from numpy.polynomial import legendre
 from scipy import ndimage, optimize, linalg
 from scipy.optimize import minimize
- 
+
 import cap_mpfit as mpfit
 
 #-------------------------------------------------------------------------------
@@ -516,7 +516,7 @@ def nnls_flags(A, b, flag):
 
 #-------------------------------------------------------------------------------
 def nnls_flags_bd(A, b, pflag, bflag, dflag, bulge_fraction=None):
-    
+
     def fun(w, verbose=False):
         model = np.dot(A, w)
         residuals = model - b
@@ -546,7 +546,7 @@ def nnls_flags_bd(A, b, pflag, bflag, dflag, bulge_fraction=None):
             return np.array([w[bflag].sum() / w[bdflag].sum() - bulge_fraction])
         def bd_cons_jac(w):
             jac = np.zeros(w.shape)
-            jac[bdflag] = -w[bflag].sum() / (w[bdflag].sum()**2) 
+            jac[bdflag] = -w[bflag].sum() / (w[bdflag].sum()**2)
             jac[bflag] += 1.0/w[bdflag].sum()
             return jac
         cons.extend([{'type': 'eq', 'fun' : bd_cons, 'jac' : bd_cons_jac}])
@@ -557,23 +557,23 @@ def nnls_flags_bd(A, b, pflag, bflag, dflag, bulge_fraction=None):
         w0[dflag] = (1.0/bulge_fraction - 1.0) / nD
     elif nD > 0:
         w0[dflag] = 1.0/nD
-    
+
     res = minimize(fun, w0, constraints=cons, jac=True, method='SLSQP')
     if res.status > 0:
         print('Warning: problem finding optimal template weights,')
         print('         kinematics may be bad!')
         #print(res)
         #fun(res.x, verbose=True)
-        
+
     return res.x
 #-------------------------------------------------------------------------------
 
 
 def rebin(x, factor):
     """
-    Rebin a one-dimensional vector by averaging 
+    Rebin a one-dimensional vector by averaging
     in groups of "factor" adjacent values
-    
+
     """
     return np.mean(x.reshape(-1, factor), axis=1)
 
@@ -1172,7 +1172,7 @@ class ppxf(object):
         if np.any(self.moments > 2) and self.bias != 0:
             D2 = 0.
             for j, p in enumerate(vj): # loop over kinematic components
-                if self.moments[j] > 2:  
+                if self.moments[j] > 2:
                     D2 += np.sum(pars[2+p:self.moments[j]+p]**2)  # eq.(8)
             err += self.bias*robust_sigma(err, zero=True)*np.sqrt(D2)  # eq.(9)
         #nz=np.where(self.weights > 0)
