@@ -517,6 +517,13 @@ def nnls_flags(A, b, flag):
 #-------------------------------------------------------------------------------
 def nnls_flags_bd(A, b, pflag, bflag, dflag, bulge_fraction=None):
 
+    if verbose:
+        print(A)
+        print(b)
+        print(pflag)
+        print(bflag)
+        print(dflag)
+
     def fun(w, verbose=False):
         model = np.dot(A, w)
         residuals = model - b
@@ -537,7 +544,7 @@ def nnls_flags_bd(A, b, pflag, bflag, dflag, bulge_fraction=None):
     cons = [{'type': 'ineq',
              'fun' : lambda w: w[bdflag],
              'jac' : lambda w: np.identity(nA)[bdflag]},
-             {'type': 'ineq',
+            {'type': 'ineq',
              'fun' : lambda w: w[bdflag].sum() - 1e-12,  # small number prevents div by zero and NaNs
              'jac' : lambda w: np.where(bdflag, 1.0, 0.0)}]
 
@@ -646,6 +653,7 @@ def _bvls_solve(A, b, npoly, nB, bulge_fraction=None):
         dflag[npoly+nB:] = True
         #soluz = nnls_flags(A, b, flag)
         soluz = nnls_flags_bd(A, b, flag, bflag, dflag, bulge_fraction)
+    print(soluz[bflag].sum()/(soluz[bflag].sum()+soluz[dflag].sum()),soluz[dflag].sum()/(soluz[bflag].sum()+soluz[dflag].sum()))
     return soluz
 
 #-------------------------------------------------------------------------------
@@ -687,7 +695,7 @@ class ppxf(object):
             bias=None, clean=False, degree=4, goodpixels=None, mdegree=0,
             moments=2, oversample=False, plot=False, quiet=False, sky=None,
             vsyst=0, regul=0, lam=None, reddening=None, component=0, reg_dim=None,
-            bulge_fraction=None):
+            bulge_fraction=None, brot=True):
 
         # Do extensive checking of possible input errors
         #
@@ -706,6 +714,7 @@ class ppxf(object):
         self.reg_dim = np.asarray(reg_dim)
         self.bulge_fraction = bulge_fraction
         self.weights = None
+        self.brot=brot
 
         s1 = templates.shape
         if len(s1) == 1: # Single template
@@ -811,6 +820,7 @@ class ppxf(object):
                 raise ValueError('MOMENTS should be 2, 4 or 6 (or negative to keep kinematics fixed)')
 
         start = np.atleast_2d(start)
+
         if len(start) != self.ncomp:
             raise ValueError('START must have one element per kinematic component')
 
@@ -841,15 +851,36 @@ class ppxf(object):
         p = 0
         vlims = np.empty(2*self.ncomp)
 
+        if self.ncomp > 1:
+            p = self.moments[0] #number of bulge moments
+            q = self.moments[1] #number of disk moments
+            start1=start[0,:2]/velScale
+            start2=start[1,:2]/velScale
+            parinfo[0]['value'] = start1[0]
+            parinfo[1]['value'] = start1[1]
+            parinfo[p]['value']=start2[0]
+            parinfo[p+1]['value']=start2[1]
+            if not self.brot: # No rotation
+                parinfo[0]['fixed']=1
+            else: # Rotation allowed
+                parinfo[0]['limited']=[1,1]
+                parinfo[0]['limits']=start2[0]+np.array([-2e3,2e3])/velScale
+                parinfo[1]['limited']=[1,1]
+                parinfo[p]['limited']=[1,1]
+                parinfo[p+1]['limited']=[1,1]
+                parinfo[p]['limits']=start2[0]+np.array([-2e3,2e3])/velScale
+                parinfo[1]['limits']=np.array([0.1,1e3/velScale])
+                parinfo[p+1]['limits']=np.array([0.1,1e3/velScale])
+        elif self.ncomp == 1:
+            start1=start[0,:]/velScale
+            parinfo[0]['value']=start1[0]
+            parinfo[1]['value']=start1[1]
+            parinfo[0]['limited']=[1,1]
+            parinfo[0]['limits']=start1[0]+np.array([-2e3,2e3])/velScale
+            parinfo[1]['limited']=[1,1]
+            parinfo[1]['limits']=np.array([0.1,1e3/velScale])
+
         for j in range(self.ncomp):
-            start1 = start[j, :2]/velScale # Convert velocity scale to pixels
-            parinfo[0+p]['value'] = start1[0]
-            vl = start1[0] + np.array([-2e3, 2e3])/velScale # +/-2000 km/s from first guess
-            parinfo[0+p]['limits'] = vlims[2*j:2*j+2] = vl
-            parinfo[0+p]['step'] = 1e-2
-            parinfo[1+p]['value'] = start1[1]
-            parinfo[1+p]['limits'] = np.array([0.1, 1e3/velScale]) # hard-coded velScale/10<sigma<1000 km/s
-            parinfo[1+p]['step'] = 1e-2
             if s1[0] <= 2*(abs(self.vsyst + start1[0]) + 5.*start1[1]):
                 raise ValueError('Velocity shift too big: Adjust wavelength ranges of spectrum and templates')
             if moments[j] < 0: # negative moments --> keep LOSVD fixed
@@ -896,7 +927,7 @@ class ppxf(object):
         #
         self.bias = 0
         status, err = self._fitfunc(mp.params)
-        self.chi2 = robust_sigma(err, zero=True)**2   # Robust computation of Chi**2/DOF.
+        self.chi2 = robust_sigma(err, zero=True)**2   # Robust computation of Chi**2/DOF. (robust_sigma gives dispersion)
 
         p = 0
         self.sol = []
@@ -915,11 +946,13 @@ class ppxf(object):
             self.polyweights = self.weights[:(self.degree+1)*len(s2)] # output weights for the additive polynomials
         self.weights = self.weights[(self.degree+1)*len(s2):] # output weights for the templates (or sky) only
 
+        chi2n=np.sum((self.bestfit[self.goodpixels] - self.galaxy[self.goodpixels])**2)
         if not quiet:
             print("Best Fit:       V     sigma        h3        h4        h5        h6")
             for j in range(self.ncomp):
                 print("comp.", j, "".join("%10.3g" % f for f in self.sol[j]))
             print("chi2/DOF: %.4g" % self.chi2)
+            print("New chi2", chi2n)
             print('Function evaluations:', ncalls)
             nw = self.weights.size
             if reddening is not None:
@@ -928,13 +961,35 @@ class ppxf(object):
             if self.weights.size <= 20:
                 print('Templates weights:')
                 print("".join("%8.3g " % f for f in self.weights))
-
+            wb = self.weights[:self.ntemp/2]
+            wbi = wb.argsort()[::-1]
+            wbmax = wb.max()
+            wbi = [i for i in wbi if wb[i] > 0.0001]
+            wbsum = wb.sum()/self.weights.sum()
+            wd = self.weights[self.ntemp/2:]
+            wdi = wd.argsort()[::-1]
+            wdmax = wd.max()
+            wdi = [i for i in wdi if wd[i] > 0.0001]
+            wdsum = wd.sum()/self.weights.sum()
+        wts=np.hstack((wbsum,wdsum,chi2n,self.chi2))
+        np.savetxt("ppxfout.txt",self.sol,fmt="%10.3g")
+        np.savetxt("ppxfoutwt.txt",wts,fmt="%10.3g")
+        bwtsin=np.vstack((wb[wbi],wbi))
+        dwtsin=np.vstack((wd[wdi],wdi))
+        np.savetxt("ppxfoutwtsb.txt",bwtsin,fmt="%10.3g")
+        np.savetxt("ppxfoutwtsd.txt",dwtsin,fmt="%10.3g")
+        np.savetxt("ppxfoutwt.txt",wts,fmt="%10.3g")
         if self.ncomp ==1:
             self.sol = self.sol[0]
             self.error = self.error[0]
 
         # Plot final data-model comparison if required.
         #
+        pltout = np.hstack((self.galaxy,self.bestfit,self.bfbulge,self.bfdisk))
+        np.savetxt("galspec.txt",self.galaxy,fmt="%10.3g")
+        np.savetxt("bestfit.txt",self.bestfit,fmt="%10.3g")
+        np.savetxt("bfbulge.txt",self.bfbulge,fmt="%10.3g")
+        np.savetxt("bfdisk.txt",self.bfdisk,fmt="%10.3g")
         if plot:
             mn = np.min(self.bestfit[self.goodpixels])
             mx = np.max(self.bestfit[self.goodpixels])
@@ -958,7 +1013,7 @@ class ppxf(object):
                 w = [0, -1]
             for gj in self.goodpixels[w]:
                 plt.plot([gj, gj], [mn, self.bestfit[gj]], 'LimeGreen')
-
+            plt.savefig('outfit')
 #-------------------------------------------------------------------------------
 
     def _fitfunc(self, pars, fjac=None):
@@ -1043,10 +1098,10 @@ class ppxf(object):
             nsky = np.shape(self.sky)[1]
 
         tempdim = self.star.ndim
-        ntemp = self.star.shape[1] if tempdim == 2 else 1 # Number of template spectra
+        self.ntemp = self.star.shape[1] if tempdim == 2 else 1 # Number of template spectra
 
         npoly = (self.degree + 1)*nspec # Number of additive polynomials in the fit
-        nrows = npoly + nsky*nspec + ntemp
+        nrows = npoly + nsky*nspec + self.ntemp
         ncols = npix*nspec
         if self.regul > 0:
             dim = self.reg_dim.size
@@ -1083,7 +1138,7 @@ class ppxf(object):
 
         for j in range(nsky):
             skyj = self.sky[:, j]
-            k = npoly + ntemp
+            k = npoly + self.ntemp
             if nspec == 2:
                 c[:npix, k+2*j] = skyj   # Sky for left spectrum
                 c[npix:, k+2*j+1] = skyj # Sky for right spectrum
@@ -1148,6 +1203,15 @@ class ppxf(object):
                 bb = b[self.goodpixels]
             nbulge = (self.component == 0).sum()  # component 0 is the bulge
             self.weights = _bvls_solve(aa, bb, npoly, nbulge, self.bulge_fraction)
+            m,n = aa.shape
+            flag = np.zeros(n, dtype=bool)
+            bflag = np.zeros(n, dtype=bool)
+            dflag = np.zeros(n, dtype=bool)
+            flag[:npoly] = True  # flag = True on Legendre polynomials
+            bflag[npoly:npoly+nbulge] = True
+            dflag[npoly+nbulge:] = True
+            self.bfbulge = c[:,bflag].dot(self.weights[bflag])
+            self.bfdisk = c[:,dflag].dot(self.weights[dflag])
             self.bestfit = c.dot(self.weights)
             if len(s3) > 1 and s3[0] == s3[1]: # input NOISE is a npix*npix covariance matrix
                 err = self.noise.dot(self.galaxy - self.bestfit)[self.goodpixels]
