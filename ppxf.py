@@ -1,7 +1,7 @@
 ################################################################################
 #
 # Copyright (C) 2001-2015, Michele Cappellari
-# E-mail: cappellari_at_astro.ox.ac.uk
+# E-mail: michele.cappellari_at_physics.ox.ac.uk
 #
 # Updated versions of the software are available from my web page
 # http://purl.org/cappellari/software
@@ -73,7 +73,7 @@
 #       TEMPLATES[nPixels, nAge, nMetal] or four TEMPLATES[nPixels, nAge, nMetal, nAlpha]
 #       dimensions, depending on the number of population variables one wants to study.
 #       This can be useful to try to attach a physical meaning to the output WEIGHTS, in
-#       term of the galaxy star formation history and chmemical composition distribution.
+#       term of the galaxy star formation history and chemical composition distribution.
 #       In that case the templates may represent single stellar population SSP models
 #       and should be arranged in sequence of increasing age, metallicity or alpha along
 #       the second, third or fourth dimension of the array respectively.
@@ -84,12 +84,12 @@
 #       templates to make the two rest-frame spectral ranges more similar.
 #   GALAXY: vector containing the spectrum of the galaxy to be measured. The
 #       star and the galaxy spectra have to be logarithmically rebinned but the
-#       continuum does *not* have to be subtracted. The rebinning may be
-#       performed with the LOG_REBIN routine that is distributed with PPXF.
+#       continuum should *not* be subtracted. The rebinning may be performed
+#       with the LOG_REBIN routine that is distributed with PPXF.
 #     - For high redshift galaxies, one should bring the spectra close to the
 #       restframe wavelength, before doing the PPXF fit, to prevent too large
 #       velocity shifts of the templates. This can be done by dividing the
-#       observed wavelenghts by (1 + z), where z is a rough estimate of the
+#       observed wavelength by (1 + z), where z is a rough estimate of the
 #       galaxy redshift, before the logarithmic rebinning.
 #     - GALAXY can also be an array of dimensions GALAXY[nGalPixels, 2] containing
 #       two spectra to be fitted, at the same time, with a reflection-symmetric
@@ -128,10 +128,13 @@
 #       velocity is velStart=0.0 (in this case VSYST will generally be nonzero).
 #       Alternatively on should keep in mind that velStart refers to the first
 #       input galaxy spectrum, while the second will have velocity -velStart.
+#     - With multiple kinematic components START must be a list of starting
+#       values, each for a different component e.g. with two components
+#           start = [[V1, sigma1], [V2, sigma2]]
 #
 # KEYWORDS:
 #   BIAS: This parameter biases the (h3, h4, ...) measurements towards zero
-#       (Gaussian LOSVD) unless their inclusion significantly decreses the
+#       (Gaussian LOSVD) unless their inclusion significantly decreases the
 #       error in the fit. Set this to BIAS=0.0 not to bias the fit: the
 #       solution (including [V, sigma]) will be noisier in that case. The
 #       default BIAS should provide acceptable results in most cases, but it
@@ -141,6 +144,14 @@
 #       change of the fit residuals, so it is insensitive to proper scaling
 #       of the NOISE vector. A nonzero BIAS can be safely used even without a
 #       reliable NOISE spectrum, or with equal weighting for all pixels.
+#   COMPONENT: When fitting more than one kinematic component, this keyword
+#       should contain the component number of each input template.
+#       In principle every template can belong to a different kinematic component.
+#       For example, when fitting the first 50 templates to component 0
+#       and the last 50 templates to component 1, one will set
+#           component = [0]*50 + [1]*50
+#     - This keyword is especially useful when fitting both emission (gas) and
+#       absorption (stars) templates simultaneously (see example for MOMENTS keyword).
 #   CLEAN: set this keyword to use the iterative sigma clipping method
 #       described in Section 2.1 of Cappellari et al. (2002, ApJ, 578, 787).
 #       This is useful to remove from the fit unmasked bad pixels, residual
@@ -155,12 +166,12 @@
 #       the fit. If the CLEAN keyword is set, in output this vector will be updated
 #       to contain the indices of the pixels that were actually used in the fit.
 #     - IMPORTANT: in all likely situations this keyword *has* to be specified.
-#   LAMBDA: When the keyword REDDENING is used, the user has to pass in this
+#   LAM: When the keyword REDDENING is used, the user has to pass in this
 #       keyword a vector with the same dimensions of GALAXY, giving the restframe
 #       wavelength in Angstrom of every pixel in the input galaxy spectrum.
 #       If one uses my LOG_REBIN routine to rebin the spectrum before the PPXF fit:
 #           LOG_REBIN, lamRange, galaxy, galaxyNew, logLam
-#       the wavelength can be obtained as lambda = np.exp(logLam).
+#       the wavelength can be obtained as lam = np.exp(logLam).
 #   MDEGREE: degree of the *multiplicative* Legendre polynomial (with mean of 1)
 #       used to correct the continuum shape during the fit (default: 0). The
 #       zero degree multiplicative polynomial is always included in the fit as
@@ -171,7 +182,7 @@
 #       the REDDENING keyword is set.
 #   MOMENTS: Order of the Gauss-Hermite moments to fit. Set this keyword to 4
 #       to fit [h3, h4] and to 6 to fit [h3, h4, h5, h6]. Note that in all cases
-#       the G-H moments are fitted (nonlinearly) *together* with [V, sigma].
+#       the G-H moments are fitted (non-linearly) *together* with [V, sigma].
 #     - If MOMENTS=2 or MOMENTS is not set then only [V, sigma] are
 #       fitted and the other parameters are returned as zero.
 #     - If MOMENTS is negative then the kinematics of the given COMPONENT are
@@ -183,7 +194,7 @@
 #       with pre-determined stellar kinematics, while fitting the gas emission).
 #       We should give in input to ppxf() the following parameters:
 #           component = [0]*100 + [1]*5   # --> [0,0,...,0,1,1,1,1,1]
-#           moments = [4, 2]
+#           moments = [-4, 2]
 #           start = [[V, sigma, h3, h4], [V, sigma]]
 #   OVERSAMPLE: Set this keyword to oversample the template by a factor 30x
 #       before convolving it with a well sampled LOSVD. This can be useful to
@@ -195,7 +206,7 @@
 #       at the end of the fit.
 #   QUIET: set this keyword to suppress verbose output of the best fitting
 #       parameters at the end of the fit.
-#   REDDENING: Set this keyword to an initail estimate of the reddening E(B-V)>=0
+#   REDDENING: Set this keyword to an initial estimate of the reddening E(B-V)>=0
 #       to fit a positive reddening together with the kinematics and the templates.
 #       The fit assumes the extinction curve of Calzetti et al. (2000, ApJ, 533, 682)
 #       but any other prescriptions could be trivially implemented by modifying the
@@ -212,7 +223,10 @@
 #       only to the first COMPONENT=0, while additional components are not-regularized.
 #       This is useful when fitting stellar population together with gas emission lines.
 #       In that case the SSP spectral templates are given first and the gas emission
-#       templates are given last (see ppxf_population_gas_example_sdss.py)
+#       templates are given last. In this situation one has to use the REG_DIM keyword
+#       (below), to give PPXF the dimenisons of the population parameters
+#       (e.g. nAge, nMetal, nAlpha).
+#       An usage example is given in ppxf_population_gas_example_sdss.py
 #     - The effect of the regularization scheme is to enforce the numerical second
 #       derivatives between neighbouring weights (in every dimension) to be equal
 #       to -w[j-1]+2*w[j]-w[j+1]=0 with an error Delta=1/REGUL. It may be helpful
@@ -239,12 +253,29 @@
 #     - For a detailed explanation see Section 19.5 of Press et al. (2007:
 #       Numerical Recipes 3rd ed. available here http://www.nrbook.com/).
 #       The adopted implementation corresponds to their equation (19.5.10).
+#   REG_DIM: When using regularization with more than one kinematic component
+#       (using the COMPONENT keyword), the regularization is only applied to the
+#       first one (COMPONENT=0). This is useful to fit the stellar population
+#       and gas emission together.
+#       In this situation one has to use the REG_DIM keyword, to give PPXF
+#       the dimenisons of the population parameters (e.g. nAge, nMetal, nAlpha).
+#       One should creates the initial array of population templates like
+#       e.g. TEMPLATES[nPixels, nAge, nMetal, nAlpha] and define
+#           reg_dim = TEMPLATES.shape[1:] = np.array([nAge, nMetal, nAlpha])
+#       The array of stellar templates is then reshaped into a 2-dim array as
+#           TEMPLATES = TEMPLATES.reshape(TEMPLATES.shape[0], -1)
+#       and the gas templates are appended as extra columns at the end.
+#       An usage example is given in ppxf_population_gas_example_sdss.py
+# When using regularization with a single component (the COMPONENT keyword is
+#       not used or contains identical values), the number of population templates along
+#       different dimensions (e.g. nAge, nMetal, nAlpha) are inferred from the dimensions
+#       of the TEMPLATES array. However
 #   SKY: vector containing the spectrum of the sky to be included in the fit, or array
 #       of dimensions SKY[nPixels, nSky] containing different sky spectra to add to
 #       the model of the observed GALAXY spectrum. The SKY has to be log-rebinned as
 #       the GALAXY spectrum and needs to have the same number of pixels.
 #     - The sky is generally subtracted from the data before the PPXF fit. However,
-#       for oservations very heavily dominated by the sky spectrum, where a very
+#       for observations very heavily dominated by the sky spectrum, where a very
 #       accurate sky subtraction is critical, it may be useful *not* to subtract
 #       the sky from the spectrum, but to include it in the fit using this keyword.
 #   VSYST: galaxy systemic velocity (zero by default). The input initial guess
@@ -310,6 +341,8 @@
 #       for all different components, one after the other, sorted by COMPONENT.
 #     - Vel is the velocity, Sigma is the velocity dispersion, h3-h6 are the
 #       Gauss-Hermite coefficients. The model parameters are fitted simultaneously.
+#     - The precise relation between the output pPXF velocity and redshift is
+#       z = np.exp(Vel/c) - 1, which reduces to the usual z ~ Vel/c for small Vel.
 #     - I hardcoded the following safety limits on the fitting parameters:
 #         a) Vel is constrained to be +/-2000 km/s from the first input guess
 #         b) velScale/10 < Sigma < 1000 km/s
@@ -484,6 +517,12 @@
 #           for reporting problems with oversample. MC, Sydney, 5 February 2015
 #   V5.1.12 -- Use color= instead of c= to avoid new Matplotlib 1.4 bug.
 #           MC, Oxford, 25 February 2015
+#   V5.1.13 -- Updated documentation. MC, Oxford, 24 April 2015
+#   V5.1.14 -- Fixed deprecation warning in numpy 1.10. MC, Oxford, 19 October 2015
+#   V5.1.15 -- Updated documentation. Thanks to Peter Weilbacher for corrections.
+#           MC, Oxford, 22 October 2015
+#   V5.1.16 -- Fixed potentially misleading typo in documentation of MOMENTS. 
+#           MC, Oxford, 9 November 2015
 #
 ################################################################################
 
@@ -509,7 +548,7 @@ def nnls_flags(A, b, flag):
     m, n = A.shape
     AA = np.hstack([A, -A[:, flag]])
     x, err = optimize.nnls(AA, b)
-    x[flag] -= x[n:]
+    x[:n][flag] -= x[n:]
 
     return x[:n]
 
@@ -612,7 +651,7 @@ def _rfft_templates(templates, vsyst, vlims, sigmax, factor, nspec):
 
     nk = 2*dx*factor + 1
     nf = templates.shape[0]
-    npad = int(2**np.ceil(np.log2(nf + nk/2))) # vector length for zero padding
+    npad = int(2**np.ceil(np.log2(nf + nk/2)))  # vector length for zero padding
 
     # Pre-compute the FFT of all templates
     # (Use Numpy's rfft as Scipy adopted an odd output format)
@@ -887,7 +926,7 @@ class ppxf(object):
             plt.plot(self.bestfit, 'r', linewidth=2)
             plt.plot(self.goodpixels, resid[self.goodpixels], 'd', color='LimeGreen', mec='LimeGreen', ms=4)
             plt.plot(self.goodpixels, self.goodpixels*0+mn, '.k', ms=1)
-            w = np.where(np.diff(self.goodpixels) > 1)[0]
+            w = np.nonzero(np.diff(self.goodpixels) > 1)[0]
             if w.size > 0:
                 for wj in w:
                     x = np.arange(self.goodpixels[wj], self.goodpixels[wj+1])
@@ -1094,8 +1133,8 @@ class ppxf(object):
             else:                              # input NOISE is a 1sigma error vector
                 err = ((self.galaxy - self.bestfit)/self.noise)[self.goodpixels]
             if self.clean:
-                w = np.where(np.abs(err) < 3)  # select residuals smaller than 3*sigma
-                m = np.size(err) - np.size(w)
+                w = np.abs(err) < 3  # select residuals smaller than 3*sigma
+                m = err.size - w.sum()
                 if m > 0:
                     self.goodpixels = self.goodpixels[w]
                     if not self.quiet:

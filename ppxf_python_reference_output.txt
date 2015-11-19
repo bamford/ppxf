@@ -1,5 +1,5 @@
-# PPXF V5.1.10  (14 October 2014)
-# Python 3.4 using NumPy 1.9, SciPy 0.15, Matplotlib 1.4
+# PPXF V5.1.13  (23 April 2015)
+# Python 3.4 using NumPy 1.9, SciPy 0.16, Matplotlib 1.4
 ###############################################################################
 
 >>> runfile('ppxf_kinematics_example_sauron.py', wdir=r'public_programs/ppxf')
@@ -19,28 +19,28 @@ Elapsed time in PPXF: 0.25 s
 
 >>> runfile('ppxf_kinematics_example_sdss.py', wdir=r'public_programs/ppxf')
 Best Fit:       V     sigma        h3        h4        h5        h6
-comp. 0    1.3e+03      97.7   -0.0343    0.0153
-chi2/DOF: 0.9467
-Function evaluations: 32
-Nonzero Templates:  5  /  156
+comp. 0        930       226   -0.0232     0.082
+chi2/DOF: 1.002
+Function evaluations: 22
+Nonzero Templates:  4  /  156
 Formal errors:
      dV    dsigma   dh3      dh4
-     1.8     2.8   0.015    0.02
-Elapsed time in PPXF: 4.84 s
+     2.6     3.5  0.0092   0.011
+Elapsed time in PPXF: 3.12 s
 
 ###############################################################################
 
 >>> runfile('ppxf_population_example_sdss.py', wdir=r'public_programs/ppxf')
 Best Fit:       V     sigma        h3        h4        h5        h6
-comp. 0   1.29e+03      97.8   -0.0338    0.0532
+comp. 0   1.29e+03      98.2   -0.0337    0.0505
 chi2/DOF: 1.031
 Function evaluations: 77
 Nonzero Templates:  65  /  156
 Desired Delta Chi^2: 73.2
-Current Delta Chi^2: 84.05
-Elapsed time in PPXF: 16.03 s
+Current Delta Chi^2: 84.35
+Elapsed time in PPXF: 16.41 s
 Mass-weighted <logAge> [Gyr]: 1.05
-Mass-weighted <[M/H]>: -0.0391
+Mass-weighted <[M/H]>: -0.0393
 
 ###############################################################################
 

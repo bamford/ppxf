@@ -22,6 +22,12 @@ readme.txt                  ---> This README file
 /spectra                    ---> directory of FITS spectra for example
 /Miles_Models               ---> directory of FITS SSP models
 
+------------
+Installation
+------------
+
+To be able to import the module from any directory, one can add the directory with the Python code to a "path configuration file" (.pth) placed in the .../site-packages/ directory (see https://docs.python.org/install/#modifying-python-s-search-path for details).
+
 ------------------
 pPXF usage example
 ------------------
@@ -35,12 +41,12 @@ included in the distribution, adapted to support both Python 2.6/2.7 and Python 
 - MPFIT: by C.B. Markwardt -> Python version https://code.google.com/p/astrolibpy/
 
 The core scientific library Numpy/Scipy/Matplotlib http://scipy.org/ are assumed 
-to be installed and Pyfits for reading FITS files 
+to be installed and Pyfits or Astropy for reading FITS files 
 http://www.stsci.edu/institute/software_hardware/pyfits
 
 The program was tested on:
 
-    Python 2.7 and Python 3.3 with NumPy 1.8, SciPy 0.13, Matplotlib 1.3
+    Python 2.7 and Python 3.4 with NumPy 1.10, SciPy 0.15, Matplotlib 1.4
 
 No attempt was made to make PPXF work on outdated versions of those packages!
 
@@ -108,4 +114,4 @@ by eye it means something is wrong and it is unlikely that PPXF
 ################
 
 Written: Michele Cappellari, Leiden, 6 November 2003
-Last updated: MC, Oxford, 3 December 2014
+Last updated: MC, Oxford, 22 October 2015

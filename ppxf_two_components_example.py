@@ -15,12 +15,17 @@
 #   V2.0.0: Converted to Python and adapted to the changes in the new public
 #       PPXF version, Oxford 8 January 2014
 #   V2.0.1: Support both Python 2.6/2.7 and Python 3.x. MC, Oxford, 25 May 2014
+#   V2.0.2: Support both Pyfits and Astropy to read FITS files.
+#       MC, Oxford, 22 October 2015
 #
 ##############################################################################
 
 from __future__ import print_function
 
-import pyfits
+try:
+    import pyfits
+except:
+    from astropy.io import fits as pyfits
 from scipy import signal
 import numpy as np
 from time import clock

@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 #----------------------------------------------------------------------------
 #
-# Monte Carlo simulation of the kinematical extraction with pPXF. It is useful
+# Monte Carlo simulation of the kinematic extraction with pPXF. It is useful
 # to determine the desired value for the BIAS keyword of the pPXF procedure.
 # This procedure generates a plot similar (but not identical) to Figure 6 in
 # Cappellari & Emsellem, 2004, PASP, 116, 138.
@@ -21,12 +21,17 @@
 #   MC, Oxford, 29 July 2011
 # V2.0.0: Translated from IDL into Python. MC, Oxford, 9 December 2013
 # V2.0.1: Support both Python 2.6/2.7 and Python 3.x. MC, Oxford, 25 May 2014
+# V2.0.2: Support both Pyfits and Astropy to read FITS files.
+#   MC, Oxford, 22 October 2015
 #
 ##############################################################################
 
 from __future__ import print_function
 
-import pyfits
+try:
+    import pyfits
+except:
+    from astropy.io import fits as pyfits
 from scipy import ndimage, signal
 import numpy as np
 import matplotlib.pyplot as plt
@@ -135,6 +140,7 @@ def ppxf_simulation_example():
     plt.ylabel('$h_4$')
 
     plt.tight_layout()
+    plt.pause(0.01)
 
 #----------------------------------------------------------------------------
 

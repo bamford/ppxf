@@ -1,7 +1,7 @@
 #######################################################################
 #
-# Copyright (C) 2001-2014, Michele Cappellari
-# E-mail: cappellari_at_astro.ox.ac.uk
+# Copyright (C) 2001-2015, Michele Cappellari
+# E-mail: michele.cappellari_at_physics.ox.ac.uk
 #
 # This software is provided as is without any warranty whatsoever.
 # Permission to use, for non-commercial purposes is granted.
@@ -81,6 +81,9 @@
 #   V3.0.0: Translated from IDL into Python. MC, Santiago, 23 November 2013
 #   V3.1.0: Fully vectorized log_rebin. Typical speed up by two orders of magnitude.
 #       MC, Oxford, 4 March 2014
+#   V3.2.0: Included gaussian_filter1d routine, which is a replacement for
+#       the Scipy routine with the same name, to be used with variable sigma
+#       per pixel. MC, Oxford, 10 October 2015
 #
 #----------------------------------------------------------------------
 
@@ -154,15 +157,17 @@ def log_rebin(lamRange, spec, oversample=False, velscale=None, flux=False):
 #     of each pixel of the log rebinned *galaxy* spectrum.
 # - LAMRANGETEMP: Two elements vectors [lamMin2,lamMax2] with the minimum and
 #     maximum wavelength in Angstrom in the stellar *template* used in PPXF.
-# - VEL: Estimate of the galaxy velocity in km/s.
+# - Z: Estimate of the galaxy redshift.
 #
 # V1.0.0: Michele Cappellari, Leiden, 9 September 2005
 # V1.0.1: Made a separate routine and included additional common emission lines.
 #   MC, Oxford 12 January 2012
 # V2.0.0: Translated from IDL into Python. MC, Oxford, 10 December 2013
 # V2.0.1: Updated line list. MC, Oxford, 8 January 2014
+# V2.0.2: Use redshift instead of velocity as input for higher accuracy at large z.
+#   MC, Lexington, 31 March 2015
 
-def determine_goodpixels(logLam, lamRangeTemp, vel):
+def determine_goodpixels(logLam, lamRangeTemp, z):
     """
     Generates a list of goodpixels to mask a given set of gas emission
     lines. This is meant to be used as input for PPXF.
@@ -175,11 +180,11 @@ def determine_goodpixels(logLam, lamRangeTemp, vel):
 
     flag = logLam < 0  # empy mask
     for j in range(lines.size):
-        flag |= (logLam > np.log(lines[j]) + (vel - dv[j])/c) \
-              & (logLam < np.log(lines[j]) + (vel + dv[j])/c)
+        flag |= (np.exp(logLam) > lines[j]*(1 + z)*(1 - dv[j]/c)) \
+              & (np.exp(logLam) < lines[j]*(1 + z)*(1 + dv[j]/c))
 
-    flag |= logLam < np.log(lamRangeTemp[0]) + (vel + 900.)/c  # Mask edges of
-    flag |= logLam > np.log(lamRangeTemp[1]) + (vel - 900.)/c  # stellar library
+    flag |= np.exp(logLam) > lamRangeTemp[1]*(1 + z)*(1 - 900/c)   # Mask edges of
+    flag |= np.exp(logLam) < lamRangeTemp[0]*(1 + z)*(1 + 900/c)   # stellar library
 
     return np.where(flag == 0)[0]
 
@@ -197,14 +202,18 @@ def emission_lines(logLam_temp, lamRange_gal, FWHM_gal):
     """
     Generates an array of Gaussian emission lines to be used as templates in PPXF.
     Additional lines can be easily added by editing this procedure.
+
     - logLam_temp is the natural log of the wavelength of the templates in Angstrom.
       logLam_temp should be the same as that of the stellar templates.
+
     - lamRange_gal is the estimated rest-frame fitted wavelength range
       Typically lamRange_gal = np.array([np.min(wave), np.max(wave)])/(1 + z),
       where wave is the observed wavelength of the fitted galaxy pixels and
       z is an initial very rough estimate of the galaxy redshift.
+
     - FWHM_gal is the instrumantal FWHM of the galaxy spectrum under study in
       Angstrom. Here it is assumed constant. It could be a function of wavelength.
+
     - The [OI], [OIII] and [NII] doublets are fixed at theoretical flux ratio~3.
 
     """
@@ -257,5 +266,36 @@ def emission_lines(logLam_temp, lamRange_gal, FWHM_gal):
     print(line_names)
 
     return emission_lines, line_names, line_wave
+
+#------------------------------------------------------------------------------
+
+def gaussian_filter1d(spec, sig):
+    """
+    Convolve a spectrum by a Gaussian with different sigma for every
+    pixel, given by the vector "sigma" with the same size as "spec".
+    If all sigma are the same this routine produces the same output as
+    scipy.ndimage.gaussian_filter1d, except for the border treatment.
+    Here the first/last p pixels are filled with zeros.
+    When creating  template library for SDSS data, this implementation
+    is 60x faster than the naive loop over pixels.
+
+    """
+
+    sig = sig.clip(0.01)  # forces zero sigmas to have 0.01 pixels
+    p = int(np.ceil(np.max(3*sig)))
+    m = 2*p + 1  # kernel size
+    x2 = np.linspace(-p, p, m)**2
+
+    n = spec.size
+    a = np.zeros((m, n))
+    for j in range(m):   # Loop over the small size of the kernel
+        a[j, p:-p] = spec[j:n-m+j+1]
+
+    gau = np.exp(-x2[:, None]/(2*sig**2))
+    gau /= np.sum(gau, 0)[None, :]  # Normalize kernel
+
+    conv_spectrum = np.sum(a*gau, 0)
+
+    return conv_spectrum
 
 #------------------------------------------------------------------------------
