@@ -262,7 +262,8 @@ def ppxfit(ncompfit,brot,bfract,mom):
 	dv = (logLam2[0]-logLam1[0])*c # km/s
 
 	vel = 4750. # Initial estimate of the galaxy velocity in km/s
-	goodPixels = util.determine_goodpixels(logLam1,lamRange2,vel)
+	z = np.exp(vel/c) - 1   # Relation between velocity and redshift in pPXF
+	goodPixels = util.determine_goodpixels(logLam1, lamRange2, z)
 
 	start=np.zeros(2)
 	output = np.zeros((nbins,5))
@@ -359,7 +360,8 @@ def ppxfit(ncompfit,brot,bfract,mom):
 	c = 299792.458
 	dv = (logLam2[0]-logLam1[0])*c # km/s
 	vel = 4750. # Initial estimate of the galaxy velocity in km/s
-	goodPixels = util.determine_goodpixels(logLam1,lamRange2,vel)
+	z = np.exp(vel/c) - 1   # Relation between velocity and redshift in pPXF
+	goodPixels = util.determine_goodpixels(logLam1, lamRange2, z)
 
 	kin=np.loadtxt('NGC528_onecompkinnch.txt')
 	xbin = kin[:,0]
