@@ -41,12 +41,20 @@
 #   V3.0.3: Explicitly sort template files as glob() output may not be sorted.
 #       Thanks to Marina Trevisan for reporting problems under Linux.
 #       MC, Sydney, 4 February 2015
+#   V3.0.4: Use redshift in determine_goodpixels. MC, Oxford, 5 May 2015
+#   V3.1.0: Illustrate how to deal with variable instrumental resolution.
+#       Use example galaxy spectrum from SDSS DR12. MC, Oxford, 12 October 2015
+#   V3.1.1: Support both Pyfits and Astropy to read FITS files.
+#       MC, Oxford, 22 October 2015
 #
 ##############################################################################
 
 from __future__ import print_function
 
-import pyfits
+try:
+    import pyfits
+except:
+    from astropy.io import fits as pyfits
 from scipy import ndimage
 import numpy as np
 import glob
@@ -57,28 +65,28 @@ import ppxf_util as util
 
 def ppxf_kinematics_example_sdss():
 
-    # Read SDSS DR8 galaxy spectrum taken from here http://www.sdss3.org/dr8/
-    # The spectrum is *already* log rebinned by the SDSS DR8
+    # Read SDSS DR12 galaxy spectrum taken from here http://dr12.sdss3.org/
+    # The spectrum is *already* log rebinned by the SDSS DR12
     # pipeline and log_rebin should not be used in this case.
-    #
-    file = 'spectra/NGC3522_SDSS.fits'
+    file = 'spectra/NGC4636_SDSS_DR12.fits'
     hdu = pyfits.open(file)
-    t = hdu[1].data
-    z = float(hdu[1].header["Z"]) # SDSS redshift estimate
+    t = hdu['COADD'].data
+    z =  0.003129   # SDSS redshift estimate
 
     # Only use the wavelength range in common between galaxy and stellar library.
-    #
-    mask = (t.field('wavelength') > 3540) & (t.field('wavelength') < 7409)
-    galaxy = t[mask].field('flux')/np.median(t[mask].field('flux'))  # Normalize spectrum to avoid numerical issues
-    wave = t[mask].field('wavelength')
-    noise = galaxy*0 + 0.0156           # Assume constant noise per pixel here
+    mask = (t['loglam'] > np.log10(3540)) & (t['loglam'] < np.log10(7409))
+    flux = t['flux'][mask]
+    galaxy = flux/np.median(flux)   # Normalize spectrum to avoid numerical issues
+    loglam_gal = t['loglam'][mask]
+    lam_gal = 10**loglam_gal
+    noise = galaxy*0 + 0.0166       # Assume constant noise per pixel here
 
-    # The velocity step was already chosen by the SDSS pipeline
-    # and we convert it below to km/s
-    #
-    c = 299792.458 # speed of light in km/s
-    velscale = np.log(wave[1]/wave[0])*c
-    FWHM_gal = 2.76 # SDSS has an instrumental resolution FWHM of 2.76A.
+    c = 299792.458                  # speed of light in km/s
+    frac = lam_gal[1]/lam_gal[0]    # Constant lambda fraction per pixel
+    dlam_gal = (frac - 1)*lam_gal   # Size of every pixel in Angstrom
+    wdisp = t['wdisp'][mask]        # Intrinsic dispersion of every pixel, in pixels units
+    fwhm_gal = 2.355*wdisp*dlam_gal # Resolution FWHM of every pixel, in Angstroms
+    velscale = np.log(frac)*c       # Constant velocity scale in km/s per pixel
 
     # If the galaxy is at a significant redshift (z > 0.03), one would need to apply
     # a large velocity shift in PPXF to match the template to the galaxy spectrum.
@@ -92,17 +100,15 @@ def ppxf_kinematics_example_sdss():
     # and adjust the instrumental resolution of the galaxy observations.
     # This is done with the following three commented lines:
     #
-    # z = 1.23 # Initial estimate of the galaxy redshift
-    # wave = wave/(1+z) # Compute approximate restframe wavelength
-    # FWHM_gal = FWHM_gal/(1+z)   # Adjust resolution in Angstrom
+    # lam_gal = lam_gal/(1+z)  # Compute approximate restframe wavelength
+    # fwhm_gal = fwhm_gal/(1+z)   # Adjust resolution in Angstrom
 
     # Read the list of filenames from the Single Stellar Population library
     # by Vazdekis (2010, MNRAS, 404, 1639) http://miles.iac.es/. A subset
     # of the library is included for this example with permission
-    #
     vazdekis = glob.glob('miles_models/Mun1.30Z*.fits')
     vazdekis.sort()
-    FWHM_tem = 2.51 # Vazdekis+10 spectra have a resolution FWHM of 2.51A.
+    fwhm_tem = 2.51 # Vazdekis+10 spectra have a constant resolution FWHM of 2.51A.
 
     # Extract the wavelength range and logarithmically rebin one spectrum
     # to the same velocity scale of the SDSS galaxy spectrum, to determine
@@ -111,9 +117,16 @@ def ppxf_kinematics_example_sdss():
     hdu = pyfits.open(vazdekis[0])
     ssp = hdu[0].data
     h2 = hdu[0].header
-    lamRange2 = h2['CRVAL1'] + np.array([0.,h2['CDELT1']*(h2['NAXIS1']-1)])
-    sspNew, logLam2, velscale = util.log_rebin(lamRange2, ssp, velscale=velscale)
-    templates = np.empty((sspNew.size,len(vazdekis)))
+    lam_temp = h2['CRVAL1'] + h2['CDELT1']*np.arange(h2['NAXIS1'])
+    lamRange_temp = [np.min(lam_temp), np.max(lam_temp)]
+    sspNew, logLam2, velscale = util.log_rebin(lamRange_temp, ssp, velscale=velscale)
+    templates = np.empty((sspNew.size, len(vazdekis)))
+
+    # Interpolates the galaxy spectral resolution at the location of every pixel
+    # of the templates. Outside the range of the galaxy spectrum the resolution
+    # will be extrapolated, but this is irrelevant as those pixels cannot be
+    # used in the fit anyway.
+    fwhm_gal = np.interp(lam_temp, lam_gal, fwhm_gal)
 
     # Convolve the whole Vazdekis library of spectral templates
     # with the quadratic difference between the SDSS and the
@@ -124,15 +137,18 @@ def ppxf_kinematics_example_sdss():
     # The formula below is rigorously valid if the shapes of the
     # instrumental spectral profiles are well approximated by Gaussians.
     #
-    FWHM_dif = np.sqrt(FWHM_gal**2 - FWHM_tem**2)
-    sigma = FWHM_dif/2.355/h2['CDELT1'] # Sigma difference in pixels
+    # In the line below, the fwhm_dif is set to zero when fwhm_gal < fwhm_tem.
+    # In principle it should never happen and a higher resolution template should be used.
+    #
+    fwhm_dif = np.sqrt((fwhm_gal**2 - fwhm_tem**2).clip(0))
+    sigma = fwhm_dif/2.355/h2['CDELT1'] # Sigma difference in pixels
 
-    for j in range(len(vazdekis)):
-        hdu = pyfits.open(vazdekis[j])
+    for j, fname in enumerate(vazdekis):
+        hdu = pyfits.open(fname)
         ssp = hdu[0].data
-        ssp = ndimage.gaussian_filter1d(ssp,sigma)
-        sspNew, logLam2, velscale = util.log_rebin(lamRange2, ssp, velscale=velscale)
-        templates[:,j] = sspNew/np.median(sspNew) # Normalizes templates
+        ssp = util.gaussian_filter1d(ssp, sigma)  # perform convolution with variable sigma
+        sspNew, logLam2, velscale = util.log_rebin(lamRange_temp, ssp, velscale=velscale)
+        templates[:, j] = sspNew/np.median(sspNew) # Normalizes templates
 
     # The galaxy and the template spectra do not have the same starting wavelength.
     # For this reason an extra velocity shift DV has to be applied to the template
@@ -143,19 +159,19 @@ def ppxf_kinematics_example_sdss():
     # wavelength to the rest frame before using the line below (see above).
     #
     c = 299792.458
-    dv = (logLam2[0]-np.log(wave[0]))*c # km/s
-    vel = c*z # Initial estimate of the galaxy velocity in km/s
-    goodpixels = util.determine_goodpixels(np.log(wave),lamRange2,vel)
+    dv = np.log(lam_temp[0]/lam_gal[0])*c    # km/s
+    goodpixels = util.determine_goodpixels(np.log(lam_gal), lamRange_temp, z)
 
     # Here the actual fit starts. The best fit is plotted on the screen.
     # Gas emission lines are excluded from the pPXF fit using the GOODPIXELS keyword.
     #
-    start = [vel, 180.] # (km/s), starting guess for [V,sigma]
+    vel = c*np.log(1 + z)   # Initial estimate of the galaxy velocity in km/s
+    start = [vel, 200.] # (km/s), starting guess for [V,sigma]
     t = clock()
 
     pp = ppxf(templates, galaxy, noise, velscale, start,
               goodpixels=goodpixels, plot=True, moments=4,
-              degree=10, vsyst=dv, clean=False)
+              degree=12, vsyst=dv, clean=False)
 
     print("Formal errors:")
     print("     dV    dsigma   dh3      dh4")
@@ -173,4 +189,7 @@ def ppxf_kinematics_example_sdss():
 #------------------------------------------------------------------------------
 
 if __name__ == '__main__':
+
     ppxf_kinematics_example_sdss()
+    import matplotlib.pyplot as plt
+    plt.show()

@@ -30,12 +30,17 @@
 #       MC, Oxford, 17 February 2015
 #   V2.1.6 -- Use color= instead of c= to avoid new Matplotlib bug.
 #       MC, Oxford, 25 February 2015
+#   V2.1.7: Support both Pyfits and Astropy to read FITS files.
+#       MC, Oxford, 22 October 2015
 #
 ##############################################################################
 
 from __future__ import print_function
 
-import pyfits
+try:
+    import pyfits
+except:
+    from astropy.io import fits as pyfits
 from scipy import ndimage
 import numpy as np
 import glob
@@ -126,16 +131,17 @@ def ppxf_population_gas_example_sdss():
     # The spectrum is *already* log rebinned by the SDSS DR8
     # pipeline and log_rebin should not be used in this case.
     #
-    file = 'spectra/NGC3522_SDSS.fits'
+    file = 'spectra/NGC3522_SDSS_DR8.fits'
     hdu = pyfits.open(file)
     t = hdu[1].data
     z = float(hdu[1].header["Z"]) # SDSS redshift estimate
 
     # Only use the wavelength range in common between galaxy and stellar library.
     #
-    mask = (t.field('wavelength') > 3540) & (t.field('wavelength') < 7409)
-    galaxy = t[mask].field('flux')/np.median(t[mask].field('flux'))  # Normalize spectrum to avoid numerical issues
-    wave = t[mask].field('wavelength')
+    mask = (t['wavelength'] > 3540) & (t['wavelength'] < 7409)
+    flux = t['flux'][mask]
+    galaxy = flux/np.median(flux)   # Normalize spectrum to avoid numerical issues
+    wave = t['wavelength'][mask]
 
     # The noise level is chosen to give Chi^2/DOF=1 without regularization (REGUL=0).
     # A constant error is not a bad approximation in the fitted wavelength
@@ -160,7 +166,7 @@ def ppxf_population_gas_example_sdss():
     # needed to specify the regularization dimensions
     #
     reg_dim = stars_templates.shape[1:]
-    stars_templates = stars_templates.reshape(stars_templates.shape[0],-1)
+    stars_templates = stars_templates.reshape(stars_templates.shape[0], -1)
 
     # See the pPXF documentation for the keyword REGUL,
     # for an explanation of the following two lines

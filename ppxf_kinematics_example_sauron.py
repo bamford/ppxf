@@ -40,12 +40,18 @@
 #   V3.0.2: Explicitly sort template files as glob() output may not be sorted.
 #       Thanks to Marina Trevisan for reporting problems under Linux.
 #       MC, Sydney, 4 February 2015
+#   V3.0.3: Use redshift in determine_goodpixels. MC, Oxford, 5 May 2015
+#   V3.0.4: Support both Pyfits and Astropy to read FITS files.
+#       MC, Oxford, 22 October 2015
 #
 ##############################################################################
 
 from __future__ import print_function
 
-import pyfits
+try:
+    import pyfits
+except:
+    from astropy.io import fits as pyfits
 from scipy import ndimage
 import numpy as np
 from time import clock
@@ -139,7 +145,8 @@ def ppxf_kinematics_example_sauron():
     dv = (logLam2[0]-logLam1[0])*c # km/s
 
     vel = 450. # Initial estimate of the galaxy velocity in km/s
-    goodPixels = util.determine_goodpixels(logLam1,lamRange2,vel)
+    z = np.exp(vel/c) - 1   # Relation between velocity and redshift in pPXF
+    goodPixels = util.determine_goodpixels(logLam1, lamRange2, z)
 
     # Here the actual fit starts. The best fit is plotted on the screen.
     # Gas emission lines are excluded from the pPXF fit using the GOODPIXELS keyword.

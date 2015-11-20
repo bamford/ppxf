@@ -22,12 +22,18 @@
 #       MC, Oxford, 17 February 2015
 #   V2.1.0: Illustrates how to compute mass-weighted quantities from the fit.
 #       After feedback from Tatiana Moura. MC, Oxford, 25 March 2015
+#   V2.1.1: Use redshift in determine_goodpixels. MC, Oxford, 3 April 2015
+#   V2.1.2: Support both Pyfits and Astropy to read FITS files.
+#       MC, Oxford, 22 October 2015
 #
 ##############################################################################
 
 from __future__ import print_function
 
-import pyfits
+try:
+    import pyfits
+except:
+    from astropy.io import fits as pyfits
 from scipy import ndimage
 import numpy as np
 import glob
@@ -65,13 +71,13 @@ def setup_spectral_library(velscale, FWHM_gal):
     FWHM_tem = 2.51 # Vazdekis+10 spectra have a resolution FWHM of 2.51A.
 
     # Extract the wavelength range and logarithmically rebin one spectrum
-    # to the same velocity scale of the SAURON galaxy spectrum, to determine
+    # to the same velocity scale of the SDSS galaxy spectrum, to determine
     # the size needed for the array which will contain the template spectra.
     #
     hdu = pyfits.open(vazdekis[0])
     ssp = hdu[0].data
     h2 = hdu[0].header
-    lamRange_temp = h2['CRVAL1'] + np.array([0.,h2['CDELT1']*(h2['NAXIS1']-1)])
+    lamRange_temp = h2['CRVAL1'] + np.array([0., h2['CDELT1']*(h2['NAXIS1']-1)])
     sspNew, logLam2, velscale = util.log_rebin(lamRange_temp, ssp, velscale=velscale)
 
     # Create a three dimensional array to store the
@@ -82,11 +88,11 @@ def setup_spectral_library(velscale, FWHM_gal):
     templates = np.empty((sspNew.size, nAges, nMetal))
 
     # Convolve the whole Vazdekis library of spectral templates
-    # with the quadratic difference between the SAURON and the
+    # with the quadratic difference between the SDSS and the
     # Vazdekis instrumental resolution. Logarithmically rebin
     # and store each template as a column in the array TEMPLATES.
 
-    # Quadratic sigma difference in pixels Vazdekis --> SAURON
+    # Quadratic sigma difference in pixels Vazdekis --> SDSS
     # The formula below is rigorously valid if the shapes of the
     # instrumental spectral profiles are well approximated by Gaussians.
     #
@@ -131,16 +137,17 @@ def ppxf_population_example_sdss():
     # The spectrum is *already* log rebinned by the SDSS DR8
     # pipeline and log_rebin should not be used in this case.
     #
-    file = 'spectra/NGC3522_SDSS.fits'
+    file = 'spectra/NGC3522_SDSS_DR8.fits'
     hdu = pyfits.open(file)
     t = hdu[1].data
     z = float(hdu[1].header["Z"]) # SDSS redshift estimate
 
     # Only use the wavelength range in common between galaxy and stellar library.
     #
-    mask = (t.field('wavelength') > 3540) & (t.field('wavelength') < 7409)
-    galaxy = t[mask].field('flux')/np.median(t[mask].field('flux'))  # Normalize spectrum to avoid numerical issues
-    wave = t[mask].field('wavelength')
+    mask = (t['wavelength'] > 3540) & (t['wavelength'] < 7409)
+    flux = t['flux'][mask]
+    galaxy = flux/np.median(flux)   # Normalize spectrum to avoid numerical issues
+    wave = t['wavelength'][mask]
 
     # The noise level is chosen to give Chi^2/DOF=1 without regularization (REGUL=0)
     #
@@ -166,9 +173,8 @@ def ppxf_population_example_sdss():
     # in PPXF_KINEMATICS_EXAMPLE_SAURON.
     #
     c = 299792.458
-    dv = (np.log(lamRange_temp[0])-np.log(wave[0]))*c # km/s
-    vel = c*z  # Initial estimate of the galaxy velocity in km/s
-    goodpixels = util.determine_goodpixels(np.log(wave),lamRange_temp,vel)
+    dv = c*np.log(lamRange_temp[0]/wave[0])  # km/s
+    goodpixels = util.determine_goodpixels(np.log(wave), lamRange_temp, z)
 
     # Here the actual fit starts. The best fit is plotted on the screen.
     #
@@ -180,6 +186,7 @@ def ppxf_population_example_sdss():
     # multiplicative ones (MDEGREE=10). This is only recommended for population, not
     # for kinematic extraction, where additive polynomials are always recommended.
     #
+    vel = c*np.log(1 + z)   # Initial estimate of the galaxy velocity in km/s
     start = [vel, 180.]  # (km/s), starting guess for [V,sigma]
 
     # See the pPXF documentation for the keyword REGUL,
@@ -226,3 +233,4 @@ def ppxf_population_example_sdss():
 
 if __name__ == '__main__':
     ppxf_population_example_sdss()
+    plt.pause(0.01)
