@@ -515,38 +515,63 @@ def nnls_flags(A, b, flag):
     return x[:n]
 
 #-------------------------------------------------------------------------------
-def nnls_flags_bd(A, b, pflag, bflag, dflag, bulge_fraction=None):
+def nnls_flags_bd(A, b, pflag, bflag, dflag, bulge_fraction=None,
+                  verbose=False):
+
+    scaling = A.std() * A.shape[0]
 
     if verbose:
-        print(A)
-        print(b)
+        import time
+        x = np.arange(len(b))
+        plt.ion()
+        fig, ax = plt.subplots(1, 2)
+        ax[0].plot(x, A, alpha=0.5)
+        ax[0].plot(x, b, lw=3)
+        ax[0].axis(ymin=-200, ymax=400)
+        ax[1].axis(ymin=-0.5, ymax=1.1)
         print(pflag)
         print(bflag)
         print(dflag)
+        print(bulge_fraction)
+        print(A)
+        print('scaling:', scaling)
 
-    def fun(w, verbose=False):
+
+    def fun(w, verbose=verbose):
         model = np.dot(A, w)
         residuals = model - b
-        chisq = (residuals**2).sum()
-        gradient = (A.T * 2 * residuals).sum(1)
+        chisq = (residuals**2).sum() / scaling
+        gradient = (A.T * 2 * residuals).sum(1) /scaling
         if verbose:
-            print(' weights: ', w)
-            print('   model: ', model)
-            print('       b: ', b)
-            print('residual: ', residuals)
-        return chisq, gradient
+            print('weights: ', w)
+            print('chisq:', chisq)
+            print('gradient:', gradient)
+            del(ax[0].lines[A.shape[1] + 1:-5])
+            del(ax[1].lines[:-5])
+            ax[0].plot(np.dot(A, w), lw=3)
+            ax[1].plot(np.arange(len(w)), np.clip(w, -0.5, 1.1),
+                       drawstyle='steps-mid')
+            plt.draw()
+            time.sleep(0.1)
+        return np.log(chisq), gradient/chisq
 
     nA = A.shape[1]
     nB = bflag.sum()
     nD = dflag.sum()
+    nP = pflag.sum()
     bdflag = ~pflag
 
-    cons = [{'type': 'ineq',
-             'fun' : lambda w: w[bdflag],
-             'jac' : lambda w: np.identity(nA)[bdflag]},
-            {'type': 'ineq',
-             'fun' : lambda w: w[bdflag].sum() - 1e-12,  # small number prevents div by zero and NaNs
-             'jac' : lambda w: np.where(bdflag, 1.0, 0.0)}]
+    bounds = [(-1, 1)]*nP + [(0.0, None)]*(nB+nD)
+
+    cons = []
+    # The following constraint has been replaced by the use of bounds:
+    #cons.extend([{'type': 'ineq',
+    #              'fun' : lambda w: w[bdflag],
+    #              'jac' : lambda w: np.identity(nA)[bdflag]}])
+
+    cons.extend([{'type': 'ineq',
+             'fun' : lambda w: w[bdflag].sum() - 1e-6,  # small number prevents div by zero and NaNs
+             'jac' : lambda w: np.where(bdflag, 1.0, 0.0)}])
 
     if bulge_fraction is not None:
         def bd_cons(w):
@@ -558,19 +583,20 @@ def nnls_flags_bd(A, b, pflag, bflag, dflag, bulge_fraction=None):
             return jac
         cons.extend([{'type': 'eq', 'fun' : bd_cons, 'jac' : bd_cons_jac}])
 
-    w0 = np.zeros(nA)
+    w0 = np.zeros(nA) + 1e-5
     w0[bflag] = 1.0/nB
     if bulge_fraction is not None:
         w0[dflag] = (1.0/bulge_fraction - 1.0) / nD
     elif nD > 0:
         w0[dflag] = 1.0/nD
+    w0 = np.clip(np.random.normal(w0, w0/10.0), 0, 1)
 
-    res = minimize(fun, w0, constraints=cons, jac=True, method='SLSQP')
+    res = minimize(fun, w0, constraints=cons, bounds=bounds,
+                   jac=True, method='SLSQP')
     if res.status > 0:
         print('Warning: problem finding optimal template weights,')
         print('         kinematics may be bad!')
-        #print(res)
-        #fun(res.x, verbose=True)
+        print(res.message)
 
     return res.x
 #-------------------------------------------------------------------------------
@@ -653,7 +679,7 @@ def _bvls_solve(A, b, npoly, nB, bulge_fraction=None):
         dflag[npoly+nB:] = True
         #soluz = nnls_flags(A, b, flag)
         soluz = nnls_flags_bd(A, b, flag, bflag, dflag, bulge_fraction)
-    print(soluz[bflag].sum()/(soluz[bflag].sum()+soluz[dflag].sum()),soluz[dflag].sum()/(soluz[bflag].sum()+soluz[dflag].sum()))
+    #print(soluz[bflag].sum()/(soluz[bflag].sum()+soluz[dflag].sum()),soluz[dflag].sum()/(soluz[bflag].sum()+soluz[dflag].sum()))
     return soluz
 
 #-------------------------------------------------------------------------------
@@ -678,7 +704,7 @@ def _rfft_templates(templates, vsyst, vlims, sigmax, factor, nspec):
 
     nk = 2*dx*factor + 1
     nf = templates.shape[0]
-    npad = int(2**np.ceil(np.log2(nf + nk/2))) # vector length for zero padding
+    npad = int(2**(np.ceil(np.log2(nf + nk//2)))) # vector length for zero padding
 
     # Pre-compute the FFT of all templates
     # (Use Numpy's rfft as Scipy adopted an odd output format)
@@ -849,7 +875,7 @@ class ppxf(object):
                     'value': 0., 'fixed': 0} for j in range(npars)]
 
         p = 0
-        vlims = np.empty(2*self.ncomp)
+        vlims = np.zeros(2*self.ncomp)
 
         if self.ncomp > 1:
             p = self.moments[0] #number of bulge moments
@@ -1244,6 +1270,7 @@ class ppxf(object):
         #print('weights',self.weights[nz])
         #print('bulge',self.weights[npoly:npoly+nB],(self.weights[npoly:npoly+nB]).sum())
         #print('disk',self.weights[npoly+nB:],self.weights[npoly+nB:].sum())
+
         return 0, err
 
 #-------------------------------------------------------------------------------
