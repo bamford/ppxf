@@ -271,9 +271,12 @@ class sps_lib:
         
         if weights.ndim == 3:
             weights = weights.sum(axis=2)
-
-        xgrid = np.log10(self.age_grid) + 9
-        ygrid = self.metal_grid
+            xgrid = np.log10(self.age_grid[:, :, 0]) + 9
+            ygrid = self.metal_grid[:, :, 0]
+        else:
+            xgrid = np.log10(self.age_grid) + 9
+            ygrid = self.metal_grid
+        
         util.plot_weights_2d(xgrid, ygrid, weights,
                              nodots=nodots, colorbar=colorbar, **kwargs)
 
@@ -282,8 +285,14 @@ class sps_lib:
         assert self.age_grid.shape == self.alpha_grid.shape == weights.shape, \
             "Input weight dimensions do not match"
         
-        xgrid = np.log10(self.age_grid) + 9
-        ygrid = self.alpha_grid
+        if weights.ndim == 3:
+            weights = weights.sum(axis=1)
+            xgrid = np.log10(self.age_grid[:, 0, :]) + 9
+            ygrid = self.alpha_grid[:, 0, :]
+        else:
+            xgrid = np.log10(self.age_grid) + 9
+            ygrid = self.alpha_grid
+
         util.plot_weights_2d(xgrid, ygrid, weights, xlabel="lg Age (yr)", ylabel="[alpha/Fe]",
                              nodots=nodots, colorbar=colorbar, **kwargs)
         
@@ -293,8 +302,14 @@ class sps_lib:
         assert self.metal_grid.shape == self.alpha_grid.shape == weights.shape, \
             "Input weight dimensions do not match"
         
-        xgrid = self.metal_grid
-        ygrid = self.alpha_grid
+        if weights.ndim == 3:
+            weights = weights.sum(axis=0)
+            xgrid = self.metal_grid[0, :, :]
+            ygrid = self.alpha_grid[0, :, :]
+        else:
+            xgrid = np.log10(self.age_grid) + 9
+            ygrid = self.metal_grid
+
         util.plot_weights_2d(xgrid, ygrid, weights, xlabel="[M/H]", ylabel="[alpha/Fe]",
                              nodots=nodots, colorbar=colorbar, **kwargs)
 
@@ -344,8 +359,6 @@ class sps_lib:
         on whether the input is light or mass weights. The normalization of the
         weights is irrelevant as it cancels out.
         """
-        if weights.ndim == 3:
-            weights = weights.sum(axis=2)
         return self.mean_age_metal_alpha(weights, quiet)
 
 ##############################################################################

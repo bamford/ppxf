@@ -273,3 +273,24 @@ print(f"Best-fitting redshift z = {redshift_fit:#.{prec}f} "
 pp.plot()
 plt.title(f"pPXF fit with {sps_name} SPS templates")
 plt.pause(5)
+plt.close()
+
+# %%
+
+# Check all the sps functions work
+
+weights = pp.weights.reshape(sps.age_grid.shape)
+
+sps.plot_age_metal(weights)
+plt.pause(5)
+plt.close()
+sps.plot_age_alpha(weights)
+plt.pause(5)
+plt.close()
+sps.plot_metal_alpha(weights)
+plt.pause(5)
+plt.close()
+
+sps.mean_age_metal_alpha(weights)
+
+sps.mass_to_light(weights)
