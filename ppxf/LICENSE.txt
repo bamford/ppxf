@@ -1,0 +1,14 @@
+
+License
+=======
+
+Other/Proprietary License
+
+Copyright (c) 2001-2025 Michele Cappellari
+
+This software is provided as is with no warranty. You may use it for
+non-commercial purposes and modify it for personal or internal use, as long
+as you include this copyright and disclaimer in all copies. You may not
+redistribute the code.
+
+###########################################################################

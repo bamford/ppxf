@@ -1,0 +1,5 @@
+capfit
+numpy
+scipy
+matplotlib
+astropy
