@@ -30,22 +30,23 @@ class sps_lib:
         Name of a Numpy np.savez() file containing the following arrays for a
         given SPS models library, like FSPS, Miles, GALEXEV, BPASS, XSL,...
 
-        1. templates[npixels, n_ages, n_metals] SPS spectra in units of L_Sun/A
-           (solar luminosities per Angstrom)
+        1. templates[npixels, n_ages, n_metals, <n_alpha>] SPS spectra in units of L_Sun/A
+           (solar luminosities per Angstrom), the alpha abundance dimension is optional
         2. lam[npixels] Wavelength in Angstroms in common to all the spectra
            (can be non-uniform)
         3. fwhm[npixels] vector or scalar in Angstroms, for the instrumental
            line-spread function at every wavelength
         4. ages[n_ages] for the SPS spectra along the 2nd dimension. These are
            typically logarithmically spaced, but other choices are possible.
-        5. metals[n_metals] for the SPS spectra along the 3nd dimension
-        6. masses[n_ages, n_metals] mass in solar masses of living stars +
-           remnants for each SPS
+        5. metals[n_metals] for the SPS spectra along the 3rd dimension
+        6. alpha[n_alpha] for the SPS spectra along the 4th dimension (if it exists)
+        7. masses[n_ages, n_metals, <n_alpha>] mass in solar masses of living stars +
+           remnants for each SPS, the alpha abundance dimension is optional
 
         This file can be created with a command like::
 
             np.savez_compressed(filename, templates=templates, masses=masses, 
-                                lam=lam, ages=ages, metals=metals, fwhm=fwhm)
+                                lam=lam, ages=ages, metals=metals, alpha=alpha, fwhm=fwhm)
 
     velscale : float
         desired velocity scale for the output templates library in km/s 
@@ -68,6 +69,10 @@ class sps_lib:
         ``[metal_min, metal_max]`` optional metallicity [M/H] range (inclusive) 
         for the SPS models (e.g.`` metal_range = [0, np.inf]`` to select only
         the spectra with Solar metallicity and above).
+    alpha_range : array_like with shape (2,), optional
+        ``[alpha_min, alpha_max]`` optional [alpha/Fe] range (inclusive) 
+        for the SPS models, if provided, the alpha abundance dimension is
+        included in the templates library
     norm_range : array_like with shape (2,), optional
         A two-elements vector specifying the wavelength range in Angstroms 
         within which to compute the templates normalization
@@ -106,9 +111,9 @@ class sps_lib:
     -------
     Stored as attributes of the ``sps_lib`` class:
 
-    .ages_grid : array_like with shape (n_ages, n_metals)
+    .ages_grid : array_like with shape (n_ages, n_metals, <n_alpha>)
         Age in Gyr of every template.
-    .flux : array_like with shape (n_ages, n_metals)
+    .flux : array_like with shape (n_ages, n_metals, <n_alpha>)
         If ``norm_range is not None`` then ``.flux`` contains the mean flux
         in each template spectrum within ``norm_range`` before normalization.
 
@@ -123,27 +128,31 @@ class sps_lib:
             sps = lib.sps_lib(...)
             pp = ppxf(...)                                  # Perform the ppxf fit
             light_weights = pp.weights[~gas_component]      # Exclude gas templates weights
-            light_weights = light_weights.reshape(reg_dim)  # Reshape to a 2D matrix
+            light_weights = light_weights.reshape(reg_dim)  # Reshape to a 3D matrix
             mass_weights = light_weights/sps.flux           # Divide by .flux attribute
             mass_weights /= mass_weights.sum()              # Normalize to sum=1
 
-    .templates : array_like with shape (npixels, n_ages, n_metals)
+    .templates : array_like with shape (npixels, n_ages, n_metals, <n_alpha>)
         Logarithmically sampled array with the spectral templates in Lsun/A.
     .lam_temp : array_like with shape (npixels,)
         Wavelength in Angstroms of every pixel of the output templates.
     .ln_lam_temp : array_like with shape (npixels,)
         Natural logarithm of `.lam_temp`.
-    .metals_grid : array_like with shape (n_ages, n_metals)
+    .metals_grid : array_like with shape (n_ages, n_metals, <n_alpha>)
         Metallicity [M/H] of every template.
+    .alpha_grid : array_like with shape (n_ages, n_metals, <n_alpha>)
+        [alpha/Fe] of every template.
     .n_ages : 
         Number of different ages.
     .n_metal : 
         Number of different metallicities.
+    .n_alpha :
+        Number of different alpha abundances.
 
     """
 
     def __init__(self, filename, velscale, fwhm_gal=None, age_range=None, lam_range=None,
-                 metal_range=None, norm_range=None, norm_type='mean'):
+                 metal_range=None, alpha_range=None, norm_range=None, norm_type='mean'):
 
         assert norm_type in ['max', 'lbol', 'mean'], "`norm_type` must be in ['max', 'lbol', 'mean']"
 
@@ -151,12 +160,24 @@ class sps_lib:
         spectra, masses, ages, metals, lam, fwhm_tem = \
             a["templates"], a["masses"], a["ages"], a["metals"], a["lam"], a["fwhm"]
 
+        if spectra.ndim == 4:
+            alpha = a["alphas"]
+        else:
+            alpha = None
+        
         assert len(lam) == len(fwhm_tem) == len(spectra), \
             "`lam`, `fwhm` and `templates` must have the same length"
-        assert masses.shape == spectra.shape[1:] == (ages.size, metals.size), \
-            "must be masses.shape == spectra.shape[1:] == (ages.size, metals.size)"
+        if alpha is None:
+            assert masses.shape == spectra.shape[1:] == (ages.size, metals.size), \
+                "must be masses.shape == spectra.shape[1:] == (ages.size, metals.size)"
+        else:
+            assert masses.shape == spectra.shape[1:] == (ages.size, metals.size, alpha.size), \
+                "must be masses.shape == spectra.shape[1:] == (ages.size, metals.size, alpha.size)"
 
-        metal_grid, age_grid = np.meshgrid(metals, ages)
+        if alpha is None:
+            metal_grid, age_grid = np.meshgrid(metals, ages)
+        else:
+            metal_grid, age_grid, alpha_grid = np.meshgrid(metals, ages, alpha)
 
         if fwhm_gal is not None:
 
@@ -190,9 +211,11 @@ class sps_lib:
 
         if age_range is not None:
             w = (age_range[0] <= ages) & (ages <= age_range[1])
-            templates = templates[:, w, :]
-            age_grid = age_grid[w, :]
-            metal_grid = metal_grid[w, :]
+            templates = templates[:, w]
+            age_grid = age_grid[w]
+            metal_grid = metal_grid[w]
+            if alpha is not None:
+                alpha_grid = alpha_grid[w]
             flux = flux[w, :]
             masses = masses[w, :]
 
@@ -201,8 +224,19 @@ class sps_lib:
             templates = templates[:, :, w]
             age_grid = age_grid[:, w]
             metal_grid = metal_grid[:, w]
+            if alpha is not None:
+                alpha_grid = alpha_grid[:, w]
             flux = flux[:, w]
             masses = masses[:, w]
+
+        if alpha is not None and alpha_range is not None:
+            w = (alpha_range[0] <= alpha) & (alpha <= alpha_range[1])
+            templates = templates[:, :, :, w]
+            age_grid = age_grid[:, :, w]
+            metal_grid = metal_grid[:, :, w]
+            alpha_grid = alpha_grid[:, :, w]
+            flux = flux[:, :, w]
+            masses = masses[:, :, w]
 
         self.templates_full = templates
         self.ln_lam_temp_full = ln_lam_temp
@@ -218,35 +252,65 @@ class sps_lib:
         self.lam_temp = lam_temp
         self.age_grid = age_grid    # in Gyr
         self.metal_grid = metal_grid
-        self.n_ages, self.n_metals = age_grid.shape
+        if alpha is not None:
+            self.alpha_grid = alpha_grid
+            self.n_ages, self.n_metals, self.n_alpha = age_grid.shape
+        else:
+            self.n_ages, self.n_metals = age_grid.shape
         self.flux = flux            # factor by which each template was divided
         self.mass_no_gas_grid = masses
 
 
 ###############################################################################
 
-    def plot(self, weights, nodots=False, colorbar=True, **kwargs):
+    def plot_age_metal(self, weights, nodots=False, colorbar=True, **kwargs):
 
-        assert weights.ndim == 2, "`weights` must be 2-dim"
+        assert weights.ndim in [2, 3], "`weights` must be 2-dim or 3-dim"
         assert self.age_grid.shape == self.metal_grid.shape == weights.shape, \
             "Input weight dimensions do not match"
+        
+        if weights.ndim == 3:
+            weights = weights.sum(axis=2)
 
         xgrid = np.log10(self.age_grid) + 9
         ygrid = self.metal_grid
         util.plot_weights_2d(xgrid, ygrid, weights,
                              nodots=nodots, colorbar=colorbar, **kwargs)
 
+    def plot_age_alpha(self, weights, nodots=False, colorbar=True, **kwargs):
+        assert weights.ndim == 3, "`weights` must be 3-dim"
+        assert self.age_grid.shape == self.alpha_grid.shape == weights.shape, \
+            "Input weight dimensions do not match"
+        
+        xgrid = np.log10(self.age_grid) + 9
+        ygrid = self.alpha_grid
+        util.plot_weights_2d(xgrid, ygrid, weights, xlabel="lg Age (yr)", ylabel="[alpha/Fe]",
+                             nodots=nodots, colorbar=colorbar, **kwargs)
+        
+
+    def plot_metal_alpha(self, weights, nodots=False, colorbar=True, **kwargs):
+        assert weights.ndim == 3, "`weights` must be 3-dim"
+        assert self.metal_grid.shape == self.alpha_grid.shape == weights.shape, \
+            "Input weight dimensions do not match"
+        
+        xgrid = self.metal_grid
+        ygrid = self.alpha_grid
+        util.plot_weights_2d(xgrid, ygrid, weights, xlabel="[M/H]", ylabel="[alpha/Fe]",
+                             nodots=nodots, colorbar=colorbar, **kwargs)
+
+    def plot(self, *args, **kwargs):
+        self.plot_age_metal(*args, **kwargs)
 
 ##############################################################################
 
-    def mean_age_metal(self, weights, quiet=False):
+    def mean_age_metal_alpha(self, weights, quiet=False):
         """
-        Compute the weighted ages and metallicities, given the weights returned
-        by pPXF. The output population will be light or mass-weighted,
-        depending on whether the input is light or mass weights.
+        Compute the weighted ages, metallicities, and alpha abundances, given
+        the weights returned by pPXF. The output population will be light or
+        mass-weighted, depending on whether the input is light or mass weights.
         The normalization of the weights is irrelevant as it cancels out.
         """
-        assert weights.ndim == 2, "`weights` must be 2-dim"
+        assert weights.ndim in [2, 3], "`weights` must be 2-dim or 3-dim"
         assert self.age_grid.shape == self.metal_grid.shape == weights.shape, \
             "Input weight dimensions do not match"
 
@@ -261,8 +325,28 @@ class sps_lib:
             print(f'Weighted <lg_age> [yr]: {mean_lg_age:#.3g}')
             print(f'Weighted <[M/H]>: {mean_metal:#.3g}')
 
-        return mean_lg_age, mean_metal
+        if weights.ndim == 3:
+            assert self.alpha_grid.shape == weights.shape, \
+                "Input weight dimensions do not match"
+            alpha_grid = self.alpha_grid
+            mean_alpha = np.sum(weights*alpha_grid)/np.sum(weights)
+            if not quiet:
+                print(f'Weighted <[alpha/Fe]>: {mean_alpha:#.3g}')
+            return mean_lg_age, mean_metal, mean_alpha
+        else:
+            return mean_lg_age, mean_metal
  
+
+    def mean_age_metal(self, weights, quiet=False):
+        """
+        Compute the weighted ages and metallicities, given the weights returned
+        by pPXF. The output population will be light or mass-weighted, depending
+        on whether the input is light or mass weights. The normalization of the
+        weights is irrelevant as it cancels out.
+        """
+        if weights.ndim == 3:
+            weights = weights.sum(axis=2)
+        return self.mean_age_metal_alpha(weights, quiet)
 
 ##############################################################################
 #
